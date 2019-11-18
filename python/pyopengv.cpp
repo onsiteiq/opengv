@@ -290,6 +290,40 @@ py::object ransac(
   return arrayFromTransformation(ransac.model_coefficients_);
 }
 
+py::object ransac_twopt(
+    pyarray_d &v,
+    pyarray_d &p,
+    pyarray_d &R,
+    double threshold,
+    int max_iterations,
+    double probability )
+{
+  using namespace opengv::sac_problems::absolute_pose;
+
+  CentralAbsoluteAdapter adapter(v, p);
+
+  adapter.setR(R);
+
+  // Create a twopt ransac problem
+  AbsolutePoseSacProblem::algorithm_t algorithm = AbsolutePoseSacProblem::TWOPT;
+
+  std::shared_ptr<AbsolutePoseSacProblem>
+      absposeproblem_ptr(
+        new AbsolutePoseSacProblem(adapter, algorithm));
+
+  // Create a ransac solver for the problem
+  opengv::sac::Ransac<AbsolutePoseSacProblem> ransac;
+
+  ransac.sac_model_ = absposeproblem_ptr;
+  ransac.threshold_ = threshold;
+  ransac.max_iterations_ = max_iterations;
+  ransac.probability_ = probability;
+
+  // Solve
+  ransac.computeModel();
+  return arrayFromTransformation(ransac.model_coefficients_);
+}
+
 py::object lmeds(
     pyarray_d &v,
     pyarray_d &p,
@@ -680,6 +714,14 @@ PYBIND11_MODULE(pyopengv, m) {
         py::arg("v"),
         py::arg("p"),
         py::arg("algo_name"),
+        py::arg("threshold"),
+        py::arg("iterations") = 1000,
+        py::arg("probability") = 0.99
+  );
+   m.def("absolute_pose_twopt_ransac", pyopengv::absolute_pose::ransac_twopt,
+        py::arg("v"),
+        py::arg("p"),
+        py::arg("R"),
         py::arg("threshold"),
         py::arg("iterations") = 1000,
         py::arg("probability") = 0.99
