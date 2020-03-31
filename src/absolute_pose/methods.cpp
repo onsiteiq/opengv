@@ -41,8 +41,82 @@
 #include <opengv/math/cayley.hpp>
 #include <opengv/math/quaternion.hpp>
 #include <opengv/math/roots.hpp>
+#include <opengv/relative_pose/CentralRelativeAdapter.hpp>
+#include <opengv/triangulation/methods.hpp>
 
 #include <iostream>
+
+opengv::translation_t
+opengv::absolute_pose::onept(
+	const RelativeToAbsoluteAdapterBase & adapter,
+	const std::vector<int> & indices)
+{
+	assert(indices.size() == 1);
+	return onept(adapter, indices[0]);
+}
+
+opengv::translation_t 
+opengv::absolute_pose::onept(
+	const RelativeToAbsoluteAdapterBase & adapter,
+	const int index)
+{
+	rotation_t R = adapter.getR();
+
+	bearingVector_t b1 = adapter.getBearingVector(index);
+
+	// Bearings are in camera coordinate system so transform to
+	// world coordinates.
+	b1 = R.transpose() * b1;
+
+	bearingVector_t b2 = adapter.getBearingVector2(index);
+
+	translation_t t = adapter.gett();
+	translation_t o1 = adapter.geto1();
+	//translation_t o2 = adapter.geto2();
+
+	//t = t / t.norm();
+
+	//Eigen::Vector3d plane_n = b1.cross(t);
+
+	// We cannot determine the translation if the bearing from
+	// camera two (b2) is in the plane formed by the camera one bearing
+	// (b1) and unscaled translation (t).
+
+	//if ( fabs(plane_n.dot(b2)) < 0.001 )
+	//	return Eigen::Vector3d::Zero();
+
+	// Intersect the ray from camera two with the plane described in
+	// the above comment.
+
+	//double d = (o1 - o2).dot(plane_n) / b2.dot(plane_n);
+
+	//Eigen::Vector3d p = d * b2 + o2;
+
+
+	Eigen::Vector3d p = adapter.getPoint(index);
+
+	// P is not always valid for a given index
+	if (p == Eigen::Vector3d::Zero()) return p;
+
+	// Triangulate the ray from o1 along t and the ray from p in the opposite
+	// direction of b1. This will be our translation in the world frame.
+
+	bearingVectors_t tri_bearings_p;
+	bearingVectors_t tri_bearings_o1;
+
+	tri_bearings_p.push_back(-b1);
+	tri_bearings_o1.push_back(t);
+
+	relative_pose::CentralRelativeAdapter tri_adapter(
+		tri_bearings_o1,
+		tri_bearings_p,
+		p-o1,
+		Eigen::Matrix3d::Identity() );
+
+	point_t point = triangulation::triangulate2(tri_adapter, 0);
+
+	return o1 + point;
+}
 
 opengv::translation_t
 opengv::absolute_pose::p2p(

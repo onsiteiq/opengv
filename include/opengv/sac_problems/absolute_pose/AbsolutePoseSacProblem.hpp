@@ -81,7 +81,8 @@ public:
     KNEIP = 1,     // central     [1]
     GAO = 2,       // central     [2]
     EPNP = 3,      // central     [4]
-    GP3P = 4       // non-central [3]
+    GP3P = 4,      // non-central [3]
+	ONEPT = 5,     // central, with rotation and relative translation prior
   } algorithm_t;
 
   /**
@@ -153,6 +154,11 @@ public:
    * \brief See parent-class.
    */
   virtual int getSampleSize() const;
+
+  /**
+   * \brief See parent-class.
+   */
+  virtual bool isSampleGood(const std::vector<int> & sample) const;
 
 protected:
   /** The adapter holding all input data */

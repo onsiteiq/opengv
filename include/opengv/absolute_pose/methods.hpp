@@ -44,6 +44,7 @@
 #include <vector>
 #include <opengv/types.hpp>
 #include <opengv/absolute_pose/AbsoluteAdapterBase.hpp>
+#include <opengv/absolute_pose/RelativeToAbsoluteAdapterBase.hpp>
 
 /**
  * \brief The namespace of this library.
@@ -55,6 +56,33 @@ namespace opengv
  */
 namespace absolute_pose
 {
+
+/** \brief Compute the translation of a central viewpoint with known rotation and unscaled translation from
+ *       camera one and one point correspondence from camera two.
+ *
+ * \param[in] adapter Visitor holding bearing vectors, camera origins, and
+ *                    known unscaled translation.
+ * \param[in] indices Indices of the one correspondence used for
+ *                    deriving the translation.
+ * \return The position of the viewpoint seen from the world frame.
+ */
+translation_t onept(
+		const RelativeToAbsoluteAdapterBase & adapter,
+		const std::vector<int> & indices);
+
+/** \brief Compute the translation of a central viewpoint with known rotation and unscaled translation from 
+ *       camera one and one point correspondence from camera two.
+ *
+ * \param[in] adapter Visitor holding bearing vectors, camera origins, and
+ *                    known unscaled translation.
+ * \param[in] index Index of the correspondence to use.
+ *                    
+ * \return The position of the viewpoint seen from the world frame.
+ */
+translation_t onept(
+		const RelativeToAbsoluteAdapterBase & adapter,
+		const int index);
+
 
 /** \brief Compute the pose of a central viewpoint with known rotation using two
  *         point correspondences.

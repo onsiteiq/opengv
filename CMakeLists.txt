@@ -104,6 +104,8 @@ set( OPENGV_SOURCE_FILES
   src/math/gauss_jordan.cpp
   src/absolute_pose/methods.cpp
   src/absolute_pose/CentralAbsoluteAdapter.cpp
+  src/absolute_pose/CentralRelativeToAbsoluteAdapter.cpp
+  src/absolute_pose/RelativeToAbsoluteAdapterBase.cpp
   src/absolute_pose/NoncentralAbsoluteAdapter.cpp
   src/absolute_pose/NoncentralAbsoluteMultiAdapter.cpp
   src/relative_pose/methods.cpp
@@ -147,6 +149,8 @@ set( OPENGV_HEADER_FILES
   include/opengv/math/gauss_jordan.hpp
   include/opengv/absolute_pose/AbsoluteAdapterBase.hpp
   include/opengv/absolute_pose/CentralAbsoluteAdapter.hpp
+  include/opengv/absolute_pose/CentralRelativeToAbsoluteAdapter.hpp
+  include/opengv/absolute_pose/RelativeToAbsoluteAdapterBase.hpp
   include/opengv/absolute_pose/NoncentralAbsoluteAdapter.hpp
   include/opengv/absolute_pose/NoncentralAbsoluteMultiAdapter.hpp
   include/opengv/absolute_pose/AbsoluteMultiAdapterBase.hpp

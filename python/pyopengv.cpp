@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <opengv/absolute_pose/AbsoluteAdapterBase.hpp>
+#include <opengv/absolute_pose/RelativeToAbsoluteAdapterBase.hpp>
 #include <opengv/absolute_pose/methods.hpp>
 #include <opengv/relative_pose/RelativeAdapterBase.hpp>
 #include <opengv/relative_pose/methods.hpp>
@@ -111,6 +112,110 @@ std::vector<int> getNindices( int n )
 
 namespace absolute_pose {
 
+
+class CentralRelativeToAbsoluteAdapter : public opengv::absolute_pose::RelativeToAbsoluteAdapterBase
+{
+protected:
+	using AbsoluteAdapterBase::_t;
+	using AbsoluteAdapterBase::_R;
+
+public:
+	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
+
+	CentralRelativeToAbsoluteAdapter(
+		pyarray_d &bearingVectors1,
+		pyarray_d &bearingVectors2,
+		pyarray_d &o1,
+		pyarray_d &o2,
+		pyarray_d &R,
+		pyarray_d &t )
+	: _bearingVectors1(bearingVectors1)
+	, _bearingVectors2(bearingVectors2)
+	{
+		for (int i = 0; i < 3; ++i) {
+			_t(i) = *t.data(i);
+			_o1(i) = *o1.data(i);
+			_o2(i) = *o2.data(i);
+		}
+		for (int i = 0; i < 3; ++i) {
+			for (int j = 0; j < 3; ++j) {
+				_R(i, j) = *R.data(i, j);
+			}
+		}
+	}
+
+	virtual ~CentralRelativeToAbsoluteAdapter() {}
+
+	virtual opengv::bearingVector_t getBearingVector( size_t index ) const
+	{
+		return bearingVectorFromArray(_bearingVectors1, index);
+	}
+
+	virtual opengv::bearingVector_t getBearingVector2(size_t index) const
+	{
+		return bearingVectorFromArray(_bearingVectors2, index);
+	}
+
+	virtual opengv::translation_t geto1() const { return _o1; };
+	
+	virtual opengv::translation_t geto2() const { return _o2; };
+
+	virtual size_t getNumberCorrespondences() const {
+		return _bearingVectors1.shape(0);
+	}
+
+	opengv::point_t getPoint(size_t index) const
+	{
+		// For this adapter points are procedurally generated. We might consider
+		// creating them ahead of time outside of the adapter as well.
+
+		opengv::rotation_t R = getR();
+
+		opengv::bearingVector_t b1 = getBearingVector(index);
+
+		// Bearings are in camera coordinate system so transform to
+		// world coordinates.
+		b1 = R.transpose() * b1;
+
+		opengv::bearingVector_t b2 = getBearingVector2(index);
+
+		opengv::translation_t t = gett();
+		opengv::translation_t o1 = geto1();
+		opengv::translation_t o2 = geto2();
+
+		t = t / t.norm();
+
+		Eigen::Vector3d plane_n = b1.cross(t);
+
+		// We cannot determine the translation if the bearing from
+		// camera two (b2) is in the plane formed by the camera one bearing
+		// (b1) and unscaled translation (t).
+
+		if (fabs(plane_n.dot(b2)) < 0.001)
+			return Eigen::Vector3d::Zero();
+
+		// Intersect the ray from camera two with the plane described in
+		// the above comment.
+
+		double d = (o1 - o2).dot(plane_n) / b2.dot(plane_n);
+
+		Eigen::Vector3d p = d * b2 + o2;
+
+		return p;
+	}
+
+protected:
+
+	pyarray_d _bearingVectors1;
+	pyarray_d _bearingVectors2;
+
+	/** Reference to origin of viewpoint 1. */
+	opengv::translation_t _o1;
+	/** Reference to origin of viewpoint 1. */
+	opengv::translation_t _o2;
+};
+
+
 class CentralAbsoluteAdapter : public opengv::absolute_pose::AbsoluteAdapterBase
 {
 protected:
@@ -193,6 +298,13 @@ protected:
 };
 
 
+py::object onept(  pyarray_d &b1, pyarray_d &b2, pyarray_d &o1, pyarray_d &o2, pyarray_d &R, pyarray_d &t )
+{
+  CentralRelativeToAbsoluteAdapter adapter(b1, b2, o1, o2, R, t);
+
+  return arrayFromTranslation(
+    opengv::absolute_pose::onept(adapter, 0));
+}
 
 py::object p2p( pyarray_d &v, pyarray_d &p, pyarray_d &R )
 {
@@ -290,6 +402,51 @@ py::object ransac(
   return arrayFromTransformation(ransac.model_coefficients_);
 }
 
+py::object ransac_onept(
+	pyarray_d &b1,
+	pyarray_d &b2,
+	pyarray_d &o1,
+	pyarray_d &o2,
+	pyarray_d &R,
+	pyarray_d &t,
+	double threshold,
+	int max_iterations,
+	double probability)
+{
+	using namespace opengv::sac_problems::absolute_pose;
+
+	CentralRelativeToAbsoluteAdapter adapter(b1, b2, o1, o2, R, t);
+	
+	// Create a twopt ransac problem
+	AbsolutePoseSacProblem::algorithm_t algorithm = AbsolutePoseSacProblem::ONEPT;
+
+	std::shared_ptr<AbsolutePoseSacProblem>
+		absposeproblem_ptr(
+			new AbsolutePoseSacProblem(adapter, algorithm));
+
+	// Create a ransac solver for the problem
+	opengv::sac::Ransac<AbsolutePoseSacProblem> ransac;
+
+	ransac.sac_model_ = absposeproblem_ptr;
+	ransac.threshold_ = threshold;
+	ransac.max_iterations_ = max_iterations;
+	ransac.probability_ = probability;
+
+	// Solve, and output additional useful debug information
+	ransac.computeModel(1);
+	
+	// There's an issue here with inliers_ maybe something fishy with
+	// how we've interfaced with ransac? Needs investigation.
+	//opengv::transformation_t failRet = Eigen::Matrix3Xd::Zero(3, 4);
+
+	//if (ransac.inliers_.empty())
+	//{
+	//	return arrayFromTransformation(failRet);
+	//}
+
+	return arrayFromTransformation(ransac.model_coefficients_);
+}
+
 py::object ransac_twopt(
     pyarray_d &v,
     pyarray_d &p,
@@ -302,7 +459,7 @@ py::object ransac_twopt(
 
   CentralAbsoluteAdapter adapter(v, p);
 
-  adapter.setR(R);
+  //adapter.setR(R);
 
   // Create a twopt ransac problem
   AbsolutePoseSacProblem::algorithm_t algorithm = AbsolutePoseSacProblem::TWOPT;
@@ -702,6 +859,7 @@ py::object triangulate2( pyarray_d &b1,
 PYBIND11_MODULE(pyopengv, m) {
   namespace py = pybind11;
 
+  m.def("absolute_pose_onept", pyopengv::absolute_pose::onept);
   m.def("absolute_pose_p2p", pyopengv::absolute_pose::p2p);
   m.def("absolute_pose_p3p_kneip", pyopengv::absolute_pose::p3p_kneip);
   m.def("absolute_pose_p3p_gao", pyopengv::absolute_pose::p3p_gao);
@@ -718,13 +876,24 @@ PYBIND11_MODULE(pyopengv, m) {
         py::arg("iterations") = 1000,
         py::arg("probability") = 0.99
   );
-   m.def("absolute_pose_twopt_ransac", pyopengv::absolute_pose::ransac_twopt,
+  m.def("absolute_pose_twopt_ransac", pyopengv::absolute_pose::ransac_twopt,
         py::arg("v"),
         py::arg("p"),
         py::arg("R"),
         py::arg("threshold"),
         py::arg("iterations") = 1000,
         py::arg("probability") = 0.99
+  );
+  m.def("absolute_pose_onept_ransac", pyopengv::absolute_pose::ransac_onept,
+	  py::arg("b1"),
+	  py::arg("b2"),
+	  py::arg("o1"),
+	  py::arg("o2"),
+	  py::arg("R"),
+	  py::arg("t"),
+	  py::arg("threshold"),
+	  py::arg("iterations") = 1000,
+	  py::arg("probability") = 0.99
   );
   m.def("absolute_pose_lmeds", pyopengv::absolute_pose::lmeds,
         py::arg("v"),

@@ -42,6 +42,35 @@ opengv::sac_problems::
 
   switch(_algorithm)
   {
+  case ONEPT:
+  {
+	  rotation_t rotation = _adapter.getR();
+
+	  try {
+		  opengv::absolute_pose::RelativeToAbsoluteAdapterBase& relToAbsAdapter = 
+				dynamic_cast<opengv::absolute_pose::RelativeToAbsoluteAdapterBase&>(_adapter);
+
+		  translation_t translation = opengv::absolute_pose::onept(relToAbsAdapter, indices);
+
+		  if (translation != Eigen::Vector3d::Zero())
+		  {
+			  transformation_t solution;
+			  translation_t t_bc = _adapter.getCamOffset(indices[0]);
+			  rotation_t R_bc = _adapter.getCamRotation(indices[0]);
+			  solution.col(3) = translation - rotation * R_bc.transpose() * t_bc;
+			  solution.block<3, 3>(0, 0) = rotation * R_bc.transpose();
+
+			  solutions.push_back(solution);
+		  }
+	  }
+	  catch (const std::bad_cast& e)
+	  {
+		  // In this case no solutions will be added and the method will 
+		  // return false. However, it may be confusing for the user to 
+		  // determine why it has failed.
+	  }
+	  break;
+  }
   case TWOPT:
   {
     rotation_t rotation = _adapter.getR();
@@ -205,9 +234,14 @@ opengv::sac_problems::
     const model_t & model,
     model_t & optimized_model)
 {
-  _adapter.sett(model.col(3));
-  _adapter.setR(model.block<3,3>(0,0));
-  optimized_model = opengv::absolute_pose::optimize_nonlinear(_adapter,inliers);
+	if (_algorithm != ONEPT)
+	{
+		_adapter.sett(model.col(3));
+		_adapter.setR(model.block<3, 3>(0, 0));
+		optimized_model = opengv::absolute_pose::optimize_nonlinear(_adapter, inliers);
+	}
+
+	optimized_model = model;
 }
 
 int
@@ -215,9 +249,37 @@ opengv::sac_problems::
     absolute_pose::AbsolutePoseSacProblem::getSampleSize() const
 {
   int sampleSize = 4;
-  if(_algorithm == TWOPT)
-    sampleSize = 2;
-  if(_algorithm == EPNP)
-    sampleSize = 6;
+  if (_algorithm == ONEPT)
+  {
+	  sampleSize = 1;
+  }
+  else if (_algorithm == TWOPT)
+  {
+	  sampleSize = 2;
+  }
+  else if (_algorithm == EPNP)
+  {
+	  sampleSize = 6;
+  }
   return sampleSize;
+}
+
+bool 
+opengv::sac_problems::
+absolute_pose::AbsolutePoseSacProblem::isSampleGood(const std::vector<int> & sample) const
+{
+	if (sample.empty()) return false;
+
+	bool good = true;
+	std::vector<int>::const_iterator it = sample.begin();
+	for (; it != sample.end(); ++it)
+	{
+		int index = *it;
+		if (_adapter.getPoint(index) == Eigen::Vector3d::Zero())
+		{
+			good = false;
+		}
+	}
+
+	return good;
 }
