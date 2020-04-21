@@ -142,6 +142,29 @@ public:
 				_R(i, j) = *R.data(i, j);
 			}
 		}
+		usePointsDirectly = false;
+	}
+
+	CentralRelativeToAbsoluteAdapter(
+		pyarray_d &b,
+		pyarray_d &p,
+		pyarray_d &o1,
+		pyarray_d &R,
+		pyarray_d &t)
+		: _bearingVectors1(b),
+		  _points(p)
+	{
+		for (int i = 0; i < 3; ++i) {
+			_t(i) = *t.data(i);
+			_o1(i) = *o1.data(i);
+		}
+		for (int i = 0; i < 3; ++i) {
+			for (int j = 0; j < 3; ++j) {
+				_R(i, j) = *R.data(i, j);
+			}
+		}
+		usePointsDirectly = true;
+		_o2 = Eigen::Vector3d::Zero();
 	}
 
 	virtual ~CentralRelativeToAbsoluteAdapter() {}
@@ -153,6 +176,10 @@ public:
 
 	virtual opengv::bearingVector_t getBearingVector2(size_t index) const
 	{
+		if (usePointsDirectly) 
+		{
+			return Eigen::Vector3d::Zero();
+		}
 		return bearingVectorFromArray(_bearingVectors2, index);
 	}
 
@@ -166,6 +193,10 @@ public:
 
 	opengv::point_t getPoint(size_t index) const
 	{
+		if (usePointsDirectly)
+		{
+			return pointFromArray(_points, index);
+		}
 		// For this adapter points are procedurally generated. We might consider
 		// creating them ahead of time outside of the adapter as well.
 
@@ -206,8 +237,11 @@ public:
 
 protected:
 
+	bool usePointsDirectly;
+
 	pyarray_d _bearingVectors1;
 	pyarray_d _bearingVectors2;
+	pyarray_d _points;
 
 	/** Reference to origin of viewpoint 1. */
 	opengv::translation_t _o1;
@@ -402,7 +436,53 @@ py::object ransac(
   return arrayFromTransformation(ransac.model_coefficients_);
 }
 
+
 py::object ransac_onept(
+		pyarray_d &b,
+		pyarray_d &p,
+		pyarray_d &o1,
+		pyarray_d &R,
+		pyarray_d &t,
+		double threshold,
+		int max_iterations,
+		double probability)
+{
+	using namespace opengv::sac_problems::absolute_pose;
+
+	CentralRelativeToAbsoluteAdapter adapter(b, p, o1, R, t);
+
+	// Create a twopt ransac problem
+	AbsolutePoseSacProblem::algorithm_t algorithm = AbsolutePoseSacProblem::ONEPT;
+
+	std::shared_ptr<AbsolutePoseSacProblem>
+		absposeproblem_ptr(
+			new AbsolutePoseSacProblem(adapter, algorithm));
+
+	// Create a ransac solver for the problem
+	opengv::sac::Ransac<AbsolutePoseSacProblem> ransac;
+
+	ransac.sac_model_ = absposeproblem_ptr;
+	ransac.threshold_ = threshold;
+	ransac.max_iterations_ = max_iterations;
+	ransac.probability_ = probability;
+
+	// Solve, and output additional useful debug information
+	ransac.computeModel(1);
+
+	// There's an issue here with inliers_ maybe something fishy with
+	// how we've interfaced with ransac? Needs investigation.
+	opengv::transformation_t failRet = Eigen::Matrix3Xd::Zero(3, 4);
+
+	if ( ransac.inliers_.size() < 2 )
+	{
+		return arrayFromTransformation(failRet);
+	}
+
+	return arrayFromTransformation(ransac.model_coefficients_);
+}
+
+
+py::object ransac_onept_structureless(
 	pyarray_d &b1,
 	pyarray_d &b2,
 	pyarray_d &o1,
@@ -457,9 +537,7 @@ py::object ransac_twopt(
 {
   using namespace opengv::sac_problems::absolute_pose;
 
-  CentralAbsoluteAdapter adapter(v, p);
-
-  //adapter.setR(R);
+  CentralAbsoluteAdapter adapter(v, p, R);
 
   // Create a twopt ransac problem
   AbsolutePoseSacProblem::algorithm_t algorithm = AbsolutePoseSacProblem::TWOPT;
@@ -884,11 +962,21 @@ PYBIND11_MODULE(pyopengv, m) {
         py::arg("iterations") = 1000,
         py::arg("probability") = 0.99
   );
-  m.def("absolute_pose_onept_ransac", pyopengv::absolute_pose::ransac_onept,
+  m.def("absolute_pose_onept_structureless_ransac", pyopengv::absolute_pose::ransac_onept_structureless,
 	  py::arg("b1"),
 	  py::arg("b2"),
 	  py::arg("o1"),
 	  py::arg("o2"),
+	  py::arg("R"),
+	  py::arg("t"),
+	  py::arg("threshold"),
+	  py::arg("iterations") = 1000,
+	  py::arg("probability") = 0.99
+  );
+  m.def("absolute_pose_onept_ransac", pyopengv::absolute_pose::ransac_onept,
+	  py::arg("b"),
+	  py::arg("p"),
+	  py::arg("o1"),
 	  py::arg("R"),
 	  py::arg("t"),
 	  py::arg("threshold"),

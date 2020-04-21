@@ -68,7 +68,7 @@ opengv::absolute_pose::onept(
 	// world coordinates.
 	b1 = R.transpose() * b1;
 
-	bearingVector_t b2 = adapter.getBearingVector2(index);
+	//bearingVector_t b2 = adapter.getBearingVector2(index);
 
 	translation_t t = adapter.gett();
 	translation_t o1 = adapter.geto1();
